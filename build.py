@@ -1,6 +1,8 @@
 from migen import *
 import sipeed_tang_primer20k
 
+import prime_list
+
 class VideoTop(Module):
     def __init__(self, platform):
         self.number = Signal(16)
@@ -12,18 +14,20 @@ class VideoTop(Module):
 
         # Génération des flags de divisibilité
         div_flags = []
-        for d in range(2, 256):
+        for d in prime_list.primes:
             div = Signal()
             div_flags.append(div)
 
             # Liste des multiples de d jusqu'à 65535
-            multiples = [i for i in range(d, 65536, d)]
+            multiples = [i for i in range(d, 94967295, d)]
 
             # Comparaison combinatoire : number == i pour chaque multiple
             comparisons = [self.number == i for i in multiples]
             self.comb += div.eq(comparisons[0])
             for cmp in comparisons[1:]:
                 self.comb += div.eq(div | cmp)
+
+            print(f"Divisor {d}")
 
         # Agrégation : si divisible par un d → pas premier
         any_divisible = Signal()
