@@ -1,25 +1,27 @@
 from migen import *
 from migen.sim import Simulator
 
+bit_size = 1024
+
 class Divider8Bit(Module):
     def __init__(self):
         # Entrées
-        self.dividend = Signal(8)
-        self.divisor = Signal(8)
+        self.dividend = Signal(bit_size)
+        self.divisor = Signal(bit_size)
         self.start = Signal()
         
         # Sorties
-        self.quotient = Signal(8)
-        self.remainder = Signal(8)
+        self.quotient = Signal(bit_size)
+        self.remainder = Signal(bit_size)
         self.ready = Signal()
         self.done = Signal()  # Indique que les résultats sont valides
         
         # Internes
-        self._count = Signal(4)
-        self._remainder = Signal(9)  # 1 bit de plus
-        self._quotient = Signal(8)
-        self._dividend_reg = Signal(8)
-        self._divisor_reg = Signal(8)
+        self._count = Signal(16)
+        self._remainder = Signal(bit_size + 1)  # 1 bit de plus
+        self._quotient = Signal(bit_size)
+        self._dividend_reg = Signal(bit_size)
+        self._divisor_reg = Signal(bit_size)
         
         self.submodules.fsm = FSM(reset_state="IDLE")
         
@@ -41,7 +43,7 @@ class Divider8Bit(Module):
         # État SHIFT: décale remainder et ajoute le bit suivant du dividende
         self.fsm.act("SHIFT",
             NextValue(self._remainder, 
-                (self._remainder << 1) | ((self._dividend_reg >> 7) & 1)),
+                (self._remainder << 1) | ((self._dividend_reg >> bit_size-1) & 1)),
             NextValue(self._dividend_reg, self._dividend_reg << 1),
             NextState("COMPARE")
         )
@@ -55,7 +57,7 @@ class Divider8Bit(Module):
                 NextValue(self._quotient, self._quotient << 1)
             ),
             NextValue(self._count, self._count + 1),
-            If(self._count == 7,  # Après 8 itérations (0 à 7)
+            If(self._count == bit_size-1,  # Après 8 itérations (0 à 7)
                 NextState("DONE")
             ).Else(
                 NextState("SHIFT")
@@ -65,7 +67,7 @@ class Divider8Bit(Module):
         # État DONE: copie les résultats vers les sorties et signale la fin
         self.fsm.act("DONE",
             NextValue(self.quotient, self._quotient),
-            NextValue(self.remainder, self._remainder[0:8]),
+            NextValue(self.remainder, self._remainder[0:bit_size]),
             NextValue(self.done, 1),
             NextState("IDLE")
         )
@@ -74,7 +76,7 @@ class Divider8Bit(Module):
 # === Testbench ===
 def testbench(dut):
     tests = [
-        (100, 10),   # Expected: 10 R 0
+        (6400, 700),   # Expected: 10 R 0
         (255, 5),    # Expected: 51 R 0
         (80, 7),     # Expected: 11 R 3
         (0, 3),      # Expected: 0 R 0
@@ -83,7 +85,7 @@ def testbench(dut):
         (17, 3),     # Expected: 5 R 2
         (200, 8),    # Expected: 25 R 0
         (255, 1),    # Expected: 255 R 0
-        (1, 255),    # Expected: 0 R 1
+        (1652310254521002, 64),    # Expected: 0 R 1
     ]
     
     for dividend, divisor in tests:
@@ -103,9 +105,10 @@ def testbench(dut):
         # Attendre que done passe à 1 (résultats valides)
         timeout = 0
         while not (yield dut.done):
+            print("  Waiting for done...")
             yield
             timeout += 1
-            if timeout > 30:
+            if timeout > bit_size*3:
                 print("TIMEOUT!")
                 break
         
@@ -128,6 +131,9 @@ def testbench(dut):
 
 # === Simulation ===
 if __name__ == "__main__":
-    dut = Divider8Bit()
-    sim = Simulator(dut, generators={"sys": [testbench(dut)]})
-    sim.run()
+    # dut = Divider8Bit()
+    # sim = Simulator(dut, generators={"sys": [testbench(dut)]})
+    # sim.run()
+
+    from migen.fhdl.verilog import convert
+    convert(Divider8Bit()).write("my_design.v")
